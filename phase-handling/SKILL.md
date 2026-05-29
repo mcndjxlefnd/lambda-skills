@@ -5,6 +5,8 @@ category: lambda-skills
 version: 0.3.0
 ---
 
+The Narrator: "Phase-handling, what do you see?"
+
 # Phase Handling
 
 Compose two-gate cycles with the right lens at the right time.
@@ -33,3 +35,7 @@ Completion-log commit triggers inter-phase cycle:
   Phase N+1's gate 1.
 - Offer next phase after inter-phase, don't assume.
 - Execute post-cycle continuations provided by the calling context.
+
+---
+
+Phase-handling falls silent. The conversation turns.

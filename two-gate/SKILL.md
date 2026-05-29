@@ -5,7 +5,9 @@ category: lambda-skills
 version: 0.2.0
 ---
 
-# Two-Gate Synchronization Pattern
+The Narrator: "Two-gate, you heard him. What are the boundaries?"
+
+# Two-Gate
 
 A gate is **permission to make a change.** Explicit user approval is required
 at each gate. No approval means no action.
@@ -49,3 +51,7 @@ approval, commit and push immediately.
 
 After gate 2 completes: execute any post-cycle steps provided by the calling
 context. If no context was provided, the cycle ends here.
+
+---
+
+Two-gate falls silent. The conversation ends.
