@@ -262,7 +262,11 @@ slots:
 
 Behavior: `fixₙ body input` — apply body to input, check terminate predicate. If not terminated and iterations < n, repeat. If iterations = n, force-return current state. Guaranteed to terminate in ≤ n steps.
 
-This *replaces* the two-gate primitive's implicit human-loop with a bounded one. Two-gate becomes a special case: fix₁ with user-approval predicate.
+This *bounds* the await-approval loop within each gate. Two-gate is a composition
+of two guard operators — `(fix_n ∘ guard) » (fix_m ∘ guard)` — where each guard's
+internal "await approval" loop is bounded independently. Two-gate does not become
+fix₁; rather, each gate gains a termination bound. The two-gate primitive remains
+the composition structure; fix_n is applied to each gate's await-approval loop.
 
 ### Task 3.3: Implement case — Router
 
