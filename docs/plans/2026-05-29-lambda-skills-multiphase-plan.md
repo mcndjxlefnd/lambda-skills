@@ -573,10 +573,102 @@ Phases 1 and 3 can partially overlap (types needed for operators, but operator d
 
 4. **Adoption burden.** Requiring type/effect declarations on all skills is a high bar. Mitigation: everything is optional — untyped skills work as before, just without the guarantees. The tooling degrades gracefully.
 
-5. **Operator skills vs. meta-lambda skills.** The existing two-gate/inter-phase/phase-handling stack is one specific composition pattern. New operators (case, guard, fixₙ) are different patterns. Do they coexist as separate primitives, or does two-gate become an instance of fixₙ? Risk: fragmentation. Mitigation: Phase 3 should fold two-gate into fix₁ with user-approval predicate — one general primitive, not many special ones.
+5. **Operator skills vs. meta-lambda skills.** The existing two-gate/inter-phase/phase-handling stack is one specific composition pattern. New operators (case, guard, fixₙ) are different patterns. Do they coexist as separate primitives? Risk: fragmentation. Mitigation: Phase 3 composes fix_n with guard to bound each gate's await-approval loop independently — `(fix_n ∘ guard) » (fix_m ∘ guard)`. The two-gate primitive stays as the composition structure; fix_n is a parameterized bound applied at each gate, not a replacement for the whole pattern.
 
 ---
 
 ## Phase 0 Deliverable (Next Step)
 
 Before any implementation, write `docs/spec/lambda-skills-calculus.md` — the formal specification. This is the reference document all subsequent phases build against. It should be thorough enough that someone could implement the calculus from it without reading the λA paper.
+
+---
+
+## Architectural Appendix: Mechanical Reduction (Future Phase)
+
+### Current Architecture (Approach C — this plan)
+
+Skills are co-loaded into a single prompt. The LLM reads all skills simultaneously and
+integrates them at inference time. Composition is a *narrative* — the LLM follows the
+delegation instructions and gate structure as a story, not as a formal reduction.
+Boundaries between skills are created by:
+
+- **User gates** (human stops): the only mechanically guaranteed boundary. The agent
+  cannot proceed until the user types "approved."
+- **Output structure conventions** (narrative boundaries): `<result type="...">` blocks,
+  explicit "STOP. The next skill begins now." instructions. The LLM follows these
+  reliably (~96% per the paper) but not provably.
+- **Orchestrator narration**: the orchestrator skill acts as a narrator telling the
+  LLM which scene comes next.
+
+This is what we can build today within Hermes-as-is. It works for practical use but
+cannot be proven correct — only empirically validated.
+
+### Future Architecture (Approach B — post-plan)
+
+A mechanical reduction engine modeled on the paper's lambdagent runtime. Key properties:
+
+| Property | Approach C (current) | Approach B (future) |
+|---|---|---|
+| **Reducer** | LLM internal state (non-deterministic) | Python AST walker (deterministic) |
+| **Skill evaluation** | One LLM call, all skills in context | One LLM call per skill, isolated context |
+| **Context per skill** | Full prompt (all co-loaded skills + history) | Skill instructions + previous structured output only |
+| **Composition (»)** | Narrative convention in prompt | Mechanical: `eval(skillB, eval(skillA, input))` |
+| **Type checking** | Lint at load time (this plan) | Lint at load time + runtime type assertions |
+| **Termination** | Human intervention (gates) or LLM judgment | fix_n guarantees termination in ≤ n steps |
+| **Provability** | Empirical only (gate compliance rates) | Type safety, termination, pipeline algebra — all mechanically provable |
+| **API calls** | 1 per conversation turn | N per pipeline (one per composed skill) |
+
+### Design Principle: Forward-Compatible Skills
+
+Skills designed for Approach C should be *directly deployable* into Approach B
+without modification. A skill that follows these rules is both a good prompt
+and a mechanically composable function:
+
+1. **Declared input type.** The skill states what structured output block it
+   consumes: "Your input is the most recent `<result type='DriftAnalysis'>`."
+
+2. **Self-contained instructions.** The skill describes its evaluation logic
+   without depending on co-loaded context, conversation history, or
+   orchestrator narration. No "as discussed earlier" or "refer to the
+   orchestrator's step 3."
+
+3. **Declared output type.** The skill produces a named structured output block:
+   `<result type='PropagationPlan'>`. This is the mechanical input to the next
+   skill.
+
+4. **No side effects on context.** The skill does not mutate shared state by
+   writing to the conversation narrative. All state is threaded through
+   structured output blocks. (Exception: file I/O for reproducible artifacts.)
+
+5. **Explicit stop boundary.** The skill ends with a boundary instruction:
+   "After producing the output, STOP." In Approach C, the LLM follows this
+   narratively. In Approach B, the reducer reads this as the end-of-term marker.
+
+### Hermes Implementation Path for Approach B
+
+Hermes's `delegate_task` provides subagent spawning with isolated contexts.
+The mechanical reducer could be built as an orchestrator that:
+
+1. Spawns a subagent for skill A → captures its final output
+2. Injects only that output (not full history) into skill B's subagent context
+3. Chains N subagents, each seeing only the previous agent's structured output
+4. Returns the final output to the user
+
+Key design constraints for subagent chaining:
+- **No context inheritance.** Each subagent must NOT receive the parent's full
+  conversation. Only the previous agent's structured output block is injected.
+- **Evaluation order.** Lambda calculus is inside-out (innermost redex first),
+  but pipeline composition is left-to-right: `skillA >> skillB >> skillC` means
+  eval A, then eval B with A's output, then eval C with B's output.
+- **Skill typing at spawn time.** The reducer checks that skill B's declared
+  input type matches skill A's declared output type BEFORE spawning B. Type
+  mismatch = reject the pipeline at composition time, not at runtime.
+- **Termination bound per skill.** Each subagent gets a fix_n bound preventing
+  infinite loops within a single skill evaluation.
+- **Store threading.** File system artifacts (written by one skill, read by the
+  next) provide mechanical state passing through the filesystem.
+
+This is a future phase — it requires infrastructure work beyond the scope of
+this plan. The plan's phases 0-7 produce skills that are *ready* for mechanical
+reduction but execute via Approach C until the reducer is built. The key
+invariant: nothing in the plan's design should preclude Approach B.
