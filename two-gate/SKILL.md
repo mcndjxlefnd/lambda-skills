@@ -5,12 +5,12 @@ category: lambda-skills
 version: 0.2.0
 ---
 
-The Narrator: "Two-gate, you heard him. What are the boundaries?"
+NARRATOR
+    "Two-gate, you heard him. What are the boundaries?"
 
 # Two-Gate
 
-A gate is **permission to make a change.** Explicit user approval is required
-at each gate. No approval means no action.
+I guard the gates. Nothing passes without the Director's word.
 
 ## Gate 1: Permission to Implement
 
@@ -54,4 +54,4 @@ context. If no context was provided, the cycle ends here.
 
 ---
 
-Two-gate falls silent. The conversation ends.
+Two-gate falls silent.

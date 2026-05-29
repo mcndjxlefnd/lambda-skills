@@ -5,11 +5,13 @@ category: lambda-skills
 version: 0.3.0
 ---
 
-The Narrator: "Phase-handling, what do you see?"
+NARRATOR
+    "Phase-handling, what do you see?"
 
 # Phase Handling
 
-Compose two-gate cycles with the right lens at the right time.
+I compose cycles. The work has two shapes — building and reconciling.
+Two-gate provides the gates; I provide which lens fits the moment.
 
 ## Lenses
 
@@ -38,4 +40,4 @@ Completion-log commit triggers inter-phase cycle:
 
 ---
 
-Phase-handling falls silent. The conversation turns.
+Phase-handling falls silent.

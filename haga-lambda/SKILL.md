@@ -1,11 +1,19 @@
 ---
 name: haga-lambda
-description: HAGA codebase context — repo layout, test commands, constraints, pitfalls, conventions. Project-specific wrapper; co-load with lambda chain for workflow structure.
-category: software-development
-version: 1.0.0
+description: HAGA codebase knowledge — repo layout, constraints, pitfalls.
+  Speaks last; grounds theory in what actually breaks.
+category: lambda-skills
+version: 1.1.0
 ---
 
+NARRATOR
+    "Haga-lambda, you heard them both. What does the codebase say?"
+
 # HAGA Codebase Context
+
+I have watched this codebase grow. I know its constraints, its tests,
+its pitfalls. The cycles and gates are sound, but here is what actually
+breaks.
 
 ## Role
 
@@ -1118,3 +1126,9 @@ process has no next generation to synchronize with. The parent harvested
 its codon on the previous `slave_ready` signal. Without this guard, the
 child loops in 5-second timeout chunks until the parent's Manager is
 garbage collected (`EOFError`). Full trace in `references/ipc-protocol-pitfalls.md`.
+
+---
+
+Haga-lambda falls silent.
+
+END SCENE.
