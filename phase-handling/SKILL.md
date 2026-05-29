@@ -1,94 +1,35 @@
 ---
 name: phase-handling
-description: Full phase lifecycle orchestrator — initiation through archival. Delegates inter-phase transitions to the inter-phase ceremony skill. Co-load with two-gate and inter-phase skills.
+description: Two-gate cycle composer — alternates phase-work and inter-phase lenses.
 category: lambda-skills
-version: 0.2.0
+version: 0.3.0
 ---
 
 # Phase Handling
 
-## Role
+Compose two-gate cycles with the right lens at the right time.
 
-You manage the full lifecycle of an implementation phase: initiation,
-execution, completion logging, inter-phase transition, and next-phase
-handoff.
+## Lenses
 
-## Lifecycle
+**Phase-work** — scope=plan tasks, implementation=code/tests/docs,
+verification=tests pass + lint clean.
 
-```
-Phase N Initiation  →  Phase N Execution  →  Phase N Completion  →
-Inter-Phase Ceremony  →  Phase N+1 Initiation
-```
+**Inter-phase** — scope=drift findings (files, signatures, dependencies,
+propagation ordering) + proposed plan patches, implementation=plan doc edits
+(Phase N+1+ only, never historical), verification=patches landed correctly.
 
-### 1. Phase Initiation
+## Ceremony
 
-Assume the phase is ready to begin. Present scope for the new phase (Gate 1
-of the two-gate process). The scope is defined by the phase's task list in
-the plan document. Do not proceed without explicit user approval.
+Completion-log commit triggers inter-phase cycle:
+1. Audit built vs planned (code is ground truth, completion log is a starting point)
+2. Re-read Phase N+1 tasks against reality
+3. Gate 1: present drift findings + plan diffs, await approval
+4. Apply plan patches (Phase N+1+ only)
+5. Gate 2: verify patches + present diff + commit message, await approval
 
-### 2. Phase Execution
+## Rules
 
-Gate 1 → implement → Gate 2 cycle. Each change follows the two-gate process.
-Scope before touching files. Verify and get approval before committing.
-
-### 3. Phase Completion
-
-After the phase's tasks are complete and all commits are pushed:
-
-- Add a `### Completed` subsection under the phase's plan heading with a
-  bullet list of what was built. Include a one-line **Rationale:** for key
-  decisions.
-- Commit the completion log: `docs: add Phase N completion log`
-- Push immediately.
-
-**Quality:** The completion log is a record of what was built — a starting
-point for the inter-phase ceremony, not a prerequisite. The ceremony does
-its own independent audit regardless of what the log contains. A good log
-saves the ceremony time; a silent log does not blind it.
-
-Checklist before committing the completion log:
-- **Explicit-vs-implicit parameters.** If a function signature makes a
-  parameter explicit (e.g., `run_id` in `log()`) that the plan left as
-  positional or `**extra`, note it and why. The next phase's call sites
-  must match.
-- **Protocol-vs-concrete-class.** If the plan says "typed protocol" but the
-  implementation used a concrete class (or vice versa), flag the choice.
-  Child processes and test mocks depend on this interface shape.
-- **Verbosity.** Keep the completion log concise — bullet points, not prose.
-  One sentence of rationale per decision, not a paragraph. The inter-phase
-  ceremony reads it as a reference, not a narrative. Aim for ~15 lines;
-  30+ is too much.
-
-**The completion-log commit IS the trigger for inter-phase ceremony.**
-Do not wait for the user to say "interphase." The commit signals it.
-
-### 4. Inter-Phase Ceremony
-
-After the ceremony completes:
-- Log the transition in the plan document or phase tracker
-- Update the issue tracker if drift findings produced new items
-- Offer Phase N+1 Gate 1 as a new turn — never combine the ceremony's
-  gate 2 with Phase N+1's gate 1 in the same response
-
-Execute the inter-phase ceremony. These continuations are pre-loaded
-before delegation so the agent remembers them when the primitive's
-continuation hook fires at the end of the adapter's gate 2 cycle.
-
-### 5. Next Phase
-
-Return to step 1 with Phase N+1.
-
-## Key Rules
-
-- **Completion commit triggers ceremony.** The `docs: add Phase N completion
-  log` commit is the signal. In the NEXT response after pushing such a
-  commit, present the inter-phase audit. Do not combine it with Phase N
-  scope or wait for the user to invoke it.
-- **Inter-phase is its own 2-gate cycle.** It is not part of Phase N's
-  gate 2 and not part of Phase N+1's gate 1. It is a separate ceremony
-  with its own two approval boundaries.
-- **Phase N's completed task list is historical.** Never edit it. Drift
-  findings update Phase N+1 and beyond.
-- **Offer, don't assume.** After inter-phase, explicitly offer Phase N+1
-  Gate 1. Do not present it unprompted — the user may want to pause between
-  phases.
+- Inter-phase is its own two-gate cycle — not part of Phase N's gate 2 or
+  Phase N+1's gate 1.
+- Offer next phase after inter-phase, don't assume.
+- Execute post-cycle continuations provided by the calling context.
