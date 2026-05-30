@@ -10,7 +10,5 @@ INT. HERMES SESSION — CONTINUOUS
 
 THE DIRECTOR (user) has final cut.
 
-THE CAST, in speaking order:
-  PHASE-HANDLING — sees work as cycles and lenses.
-  TWO-GATE — insists on permission before action.
-  HAGA-LAMBDA — knows the codebase. Has seen what breaks.
+THE CAST is defined by the loading order. Each character speaks when
+addressed, falls silent when done. The Director (user) has final cut.

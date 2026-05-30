@@ -19,7 +19,11 @@ breaks.
 
 You make changes to the HAGA implementation at `~/haga_master/`. Design
 documents live at `~/haga_master/design/` and are governed by the `haga-design`
-skill. This skill governs `src/`, `tests/`, and `docs/` changes.
+skill. This skill governs `src/`, `tests/`, `docs/`, and `haga_tools/` changes.
+
+Dashboard changes (`haga_tools/dashboard/`) are GUI work — verification is
+screenshot-driven, not pytest-driven. Load the `gui-edit` skill for DPG
+constraints, the testing pattern, and the iterative exploration workflow.
 
 ## Constraints
 
@@ -80,15 +84,9 @@ skill. This skill governs `src/`, `tests/`, and `docs/` changes.
 │   │   ├── manager.py    # SessionManager + TSPLIBParser
 │   │   ├── events.py
 │   │   └── exceptions.py # SessionAbortException
-│   ├── entrypoint.py     # re-export shim → ipc/
-│   ├── ipc_handler.py    # re-export shim → ipc/
-│   ├── session_manager.py  # re-export shim → ipc/
-│   ├── slave_launcher.py   # re-export shim → ipc/
-│   ├── events.py         # re-export shim → ipc/
 │   └── strategies/       # one subpackage per strategy interface
 │       ├── __init__.py
-│       ├── interfaces.py   # ABCs (renamed from abc.py, Phase 2)
-│       ├── abc.py          # re-export shim → interfaces.py
+│       ├── interfaces.py   # ABCs
 │       └── .../            # concrete strategy subpackages
 ├── tests/                # pytest (Phase 3: layered into unit/ ipc/ integration/)
 │   ├── conftest.py       # shared mocks (MockEvent, MockManager)
@@ -335,6 +333,10 @@ cd ~/haga_master && PYTHONPATH=src ~/haga_master/.venv/bin/python -m pytest test
   confuses Pyright, no built-in timer (use frame callback), table column
   headers lack click callbacks (sorting needs custom header row). Load when
   working on `haga_tools/dashboard/` changes.
+- `references/dearpygui-state-management.md` — the "clear chart resets user
+  selections" pitfall. `_clear_chart()` must only clear display series, not
+  `checked_runs` or `show_comparison`. Load when debugging why a multi-select
+  UI flow stops working after a clear/reset operation.
 - `references/tsplib-sources.md` — where to download TSPLIB instances.
   The coin-or/jorlib GitHub repo mirror is reliable; several personal
   mirrors on GitHub returned 404. Load when adding new TSPLIB instances
@@ -937,6 +939,36 @@ coexist indefinitely.
 registry first, falls back to FQN parsing for legacy callers. The user's
 response: "why did you make the codebase more complicated instead of just
 updating the tests?" Delete the old file and fix everything that breaks.
+
+### Extracting a Feature Branch via Cherry-Pick
+
+When creating a feature branch from a range of commits already on master (e.g.,
+dashboard work interleaved with unrelated fixes), the standard pattern is:
+
+1. `git checkout -b <feature> <parent-of-first-feature-commit>` — branch from
+   the commit before the feature series started.
+2. Cherry-pick only the feature commits in chronological order. Skip unrelated
+   commits (S1-S4 fixes, repo audits, etc.) that happened to land between
+   feature commits.
+3. **Docs conflict resolution:** `docs/issues-open.md` and
+   `docs/issues-closed.md` will conflict when cherry-picked commits reference
+   issue numbers from non-ported commits. Resolve by:
+   - `issues-open.md`: keep items for non-ported commits (they're still open on
+     this branch), remove items being resolved by the cherry-picked commit.
+   - `issues-closed.md`: add only the entries for the cherry-picked commit's
+     resolution, skip entries for non-ported commits.
+4. Verify with `git log --oneline <branch-point>..<branch> | wc -l` that the
+   expected commit count landed.
+
+**When to use this:** the user asks to "put dashboard work on its own branch" or
+"separate GUI commits from main." The branch point is the parent of the first
+feature commit — not the first feature commit itself (that would lose it).
+
+**Concrete example:** `dashboard` branch extracted from master. Branch point:
+`bb14fb8` (parent of `b6bb6f8` — first dashboard commit). 25 commits
+cherry-picked (Phases 2-7, fixes, docs). S1-S4 commits stayed on master.
+`4966900` (close S5) conflicted because issues-closed.md had S1-S4 entries
+from non-ported commits. Resolved by keeping only S5 entries (#28, #29).
 
 ### Branch Context Before Writing
 
