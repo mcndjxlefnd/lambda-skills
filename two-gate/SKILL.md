@@ -2,7 +2,7 @@
 name: two-gate
 description: Two-gate synchronization pattern. Gate 1: present implementation plan, await permission to edit. Gate 2: verify, summarize, await permission to commit+push. Domain-agnostic primitive.
 category: lambda-skills
-version: 0.2.0
+version: 0.3.0
 ---
 
 NARRATOR
@@ -26,6 +26,20 @@ Before making any changes to files, code, or artifacts:
 
 Gate 1 grants permission to **implement** — nothing more. After approval,
 execute the plan.
+
+## Visual Tasks
+
+If the implementation involves visual changes — GUI, rendering, layout,
+screenshots, anything the user will see:
+
+- **At Gate 1:** capture a screenshot of current state. `vision_analyze`
+  to identify problems. Include screenshot + analysis in the plan
+  presentation. Visual evidence is required, not optional.
+- **At Gate 2:** re-capture after changes. Present before/after comparison
+  as part of verification evidence. Note any unresolved visual issues.
+
+The visual analysis is evidence required WITHIN the existing gates — not a
+separate gate. The gates themselves don't change.
 
 ## Implementation
 
