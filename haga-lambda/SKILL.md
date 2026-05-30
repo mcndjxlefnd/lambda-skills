@@ -4,7 +4,7 @@ description: Lambda skill — HAGA codebase knowledge: repo layout, constraints,
   pitfalls, test commands, documentation conventions, issue tracker, branch
   safety. Loaded sequentially with other lambda skills.
 category: lambda-skills
-version: 1.1.0
+version: 1.1.1
 ---
 
 # HAGA Codebase Context
@@ -1154,3 +1154,26 @@ child loops in 5-second timeout chunks until the parent's Manager is
 garbage collected (`EOFError`). Full trace in `references/ipc-protocol-pitfalls.md`.
 
 
+
+## CodeGraph (MCP Code Intelligence)
+
+CodeGraph provides a pre-indexed knowledge graph of `~/haga_master/` (94 files,
+881 nodes, 1,574 edges) served via MCP tools — auto-injected, no per-session
+config. Auto-syncs via inotify (2s debounce) as you edit.
+
+Use CodeGraph INSTEAD of `search_files` + `read_file` for cross-file queries. It
+answers in one call what takes 5–8 grep/read rounds:
+
+- **`context(query="...")`** — entry points, related symbols, code snippets for
+  a task description. Replace exploratory search_files → read_file chains.
+- **`search(query="...")`** — FTS5 symbol search across the entire codebase.
+  For "where is X defined" queries.
+- **`callers(symbol="...")` / `callees(symbol="...")`** — who calls this, what
+  this calls. Before renaming, refactoring, or impact analysis.
+- **`impact(symbol="...")`** — full impact radius of a structural change.
+  Before Phase transitions or IPC protocol changes.
+- **`affected(files=["..."])`** — which tests to run after changing files.
+- **`status()`** — index health and staleness.
+
+MCP tool names use `mcp_codegraph_codegraph_<tool>()` convention. CLI fallback
+(if MCP unavailable): `cd ~/haga_master && codegraph query <symbol>`.
