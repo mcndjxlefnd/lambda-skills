@@ -1,17 +1,13 @@
 ---
 name: phase-handling
-description: Two-gate cycle composer — alternates phase-work and inter-phase lenses.
+description: Lambda skill — orchestrates phase-work and inter-phase cycles
+  through the two-gate synchronization pattern. Loaded sequentially with
+  other lambda skills.
 category: lambda-skills
 version: 0.3.0
 ---
 
-NARRATOR
-    "Phase-handling, what do you see?"
-
 # Phase Handling
-
-I compose cycles. The work has two shapes — building and reconciling.
-Two-gate provides the gates; I provide which lens fits the moment.
 
 ## Lenses
 
@@ -38,6 +34,4 @@ Completion-log commit triggers inter-phase cycle:
 - Offer next phase after inter-phase, don't assume.
 - Execute post-cycle continuations provided by the calling context.
 
----
 
-Phase-handling falls silent.

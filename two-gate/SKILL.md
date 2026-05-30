@@ -1,16 +1,14 @@
 ---
 name: two-gate
-description: Two-gate synchronization pattern. Gate 1: present implementation plan, await permission to edit. Gate 2: verify, summarize, await permission to commit+push. Domain-agnostic primitive.
+description: Lambda skill — two-gate synchronization pattern. Gate 1:
+  present plan, await permission to implement. Gate 2: verify, present
+  summary, await permission to commit. Domain-agnostic. Loaded sequentially
+  with other lambda skills.
 category: lambda-skills
 version: 0.3.0
 ---
 
-NARRATOR
-    "Two-gate, you heard him. What are the boundaries?"
-
 # Two-Gate
-
-I guard the gates. Nothing passes without the Director's word.
 
 ## Gate 1: Permission to Implement
 
@@ -66,6 +64,4 @@ approval, commit and push immediately.
 After gate 2 completes: execute any post-cycle steps provided by the calling
 context. If no context was provided, the cycle ends here.
 
----
 
-Two-gate falls silent.
