@@ -181,26 +181,17 @@ When running experiments that temporarily modify adaptation strategy code
 (or any source file) to compare variants against baseline:
 
 **Workflow:**
-1. Implement the variant code change (write_file or patch)
-2. Set a distinguishable `run_id`: patch `run.py` line 129 from
-   `f"{instance_name}-run"` to `f"{instance_name}-<variant>"` 
-3. Use `--db data/runs/<instance>-<variant>_<timestamp>.db` for filename
-4. Run with `--note "description of what changed"`
-5. Revert run.py
+1. Switch to the experiment branch in `~/haga_experiments/`
+2. Implement the variant code change (write_file or patch)
+3. Set a distinguishable `run_id`: patch `run.py` line 129 from
+   `f"{instance_name}-run"` to `f"{instance_name}-<variant>"`
+4. Run from the experiments repo using haga_master's venv:
+   `cd ~/haga_experiments && PYTHONPATH=src ~/haga_master/.venv/bin/python run.py data/tsplib/<instance>.tsp --note "description of what changed"`
+   The .db lands in `~/haga_experiments/data/runs/`; copy to the experiment's
+   `runs/` directory for commit.
+5. Revert run.py run_id
 6. Implement next variant
 7. Revert source file to original after all runs complete
-
-**Concrete example (lin318, opt1):**
-```bash
-# 1. Patch triple_independent_sigma.py with variant code
-# 2. Patch run.py: f"{instance_name}-opt1" -> run_id = "lin318-opt1"
-# 3. TS=$(date +%Y-%m-%d-%H%M%S)
-#    --db "data/runs/lin318-opt1_${TS}.db"
-#    --note "option 1: continuous mut_intensity, same tau"
-# 4. Revert run.py before next variant
-# 5. Repeat for opt2
-# 6. Revert source file
-```
 
 **run_id is the dashboard label:** The `run_id` field (`runs.run_id` in the DB)
 is what the dashboard software displays as the run's title. It defaults to
@@ -273,15 +264,6 @@ directory without updating the filter, it gets ingested as a source.
 
 Do not add `data/runs/*.db` to .gitignore. Per-run .db files are data
 artifacts — analogous to session_record.json. Commit them.
-
-### Dashboard Must Remain Pristine
-
-The `dashboard` (or `master`) branch in ~/haga_experiments is an exact
-mirror of the haga_master fork commit. Never commit to it. No logbook,
-no experiment artifacts, no config changes. logbook.md goes on the
-experiment branch (committed after the final revert). Any commit on
-dashboard makes it diverge from upstream and creates merge friction
-for future experiments.
 
 ### Don't Override --db for Single Runs Without Explicit Request
 
