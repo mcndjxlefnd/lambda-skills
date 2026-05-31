@@ -47,14 +47,23 @@ Gates come from the calling context (e.g., co-loaded two-gate).
 
 ## Pitfalls
 
-### Screenshot of Wrong Window
+### Screenshot of Wrong Window — Manifestations
 
-`import -window root` captures the focused window. If the GUI crashed
-silently on launch, the screenshot shows your terminal or browser. The
-symptoms are: `vision_analyze` describes a terminal session or GitHub
-page and says "no dashboard visible." The fix is NOT window management
-tools — the GUI simply isn't running. Check the process status, fix
-the crash, and relaunch.
+**Black window instead of GUI content:** The GUI window is visible on
+screen but shows only a solid black (or empty) rectangle. This means the
+test script **created the DPG viewport** (so the OS window is visible) but
+**never called `dpg.start_dearpygui()`** (so the render loop isn't
+running and nothing is drawn inside the window). Every DPG window that
+exists in the DPG context will not render its actual content without
+`start_dearpygui()`. Recovery: add `dpg.start_dearpygui()` and use
+`dpg.set_frame_callback` for auto-capture/auto-exit.
+
+**Terminal/browser in the frame:** `import -window root` captured the
+focused window instead of the GUI. The GUI may have crashed silently on
+launch (no viewport created at all), or another window stole focus.
+Symptoms: `vision_analyze` describes a terminal session or GitHub page
+and says "no dashboard visible." The fix is NOT window management
+tools — check the process status, fix the crash, and relaunch.
 
 ### No Window Management Tools
 

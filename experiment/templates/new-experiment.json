@@ -1,0 +1,12 @@
+{
+  "experiment": "<name>",
+  "purpose": "<why this experiment exists>",
+  "fork": {
+    "repo": "haga_master",
+    "branch": "dashboard",
+    "commit": "<fork-point-sha>"
+  },
+  "tsp_instance": null,
+  "variants": [],
+  "conclusion": null
+}

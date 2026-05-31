@@ -62,11 +62,47 @@ constraints:
   When you see a cleanup function that resets `checked_runs` or selection
   state, that's the bug.
 
+**DPG legend pitfall (2.3.1):** `dpg.add_plot_legend(parent=..., show=False)` sets the
+item's internal `show` config to `False`, but ImPlot still renders the legend
+at the C++ level. The `show` flag on legends is silently ignored. To hide a
+legend, **remove the `add_plot_legend()` call entirely**. The plot's right-click
+context menu still offers "Show Legend" if a user needs it temporarily. If you
+need a programmatic toggle, conditionally add/delete the legend item at runtime
+via `dpg.delete_item()`/`dpg.add_plot_legend()`.
+
+**DPG font management:** The default DPG font (ProggyClean) is a bitmap font.
+Scaled via `dpg.set_global_font_scale(1.3)`, it interpolates pixels and
+produces soft/blurry text. The fix is to load a proper TrueType font:
+```python
+dpg.create_context()
+with dpg.font_registry():
+    default_font = dpg.add_font(
+        "/usr/share/fonts/TTF/DejaVuSans.ttf", 17)
+dpg.bind_font(default_font)
+```
+Available on Manjaro: DejaVu Sans, Liberation Sans, Noto Sans. DejaVu Sans
+at 17px roughly matches 1.3x bitmap scale with crisp rendering. Getting
+font size right may interact with fixed-width panels (left panel at 480px
+may clip process tree text) and axis tick labels (small floats with many
+decimals overlap at larger sizes — may need tick formatting adjustments).
+Font registration must happen after `dpg.create_context()` and before
+`dpg.start_dearpygui()`. The `font_registry()` context manager is a DPG
+int-returning context manager — false-positive LSP warnings are harmless.
+
+**Iterative visual tuning:** When pixel-dimension values (subplot height, panel
+width, font size) are the right lever, the user prefers small increments.
+Overshooting by 2x wastes rounds — the correct approach is +25-50px, verify,
+repeat if needed. Prefer to undershoot and creep up.
+
 **Verification** = GUI testing is screenshot-driven, not pytest-driven.
 Launch with data, take screenshot, visually inspect. Pattern:
+
 1. Write a test script in the repo root (NOT /tmp/) that imports
    dashboard, calls `_load_file()` and `_update_chart()` programmatically,
-   then `dpg.start_dearpygui()`. Clean up after verification.
+   then `dpg.start_dearpygui()`. **CRITICAL: `dpg.start_dearpygui()` MUST be
+   called — without it, DPG's render loop never runs and the window shows
+   a black rectangle** (all UI elements exist in the DPG context but aren't
+   drawn to screen). Clean up after verification.
    **Programmatic setup**: to test features that need specific state (e.g.
    comparison table needs 2+ checked runs), set state directly before launch:
    ```python
@@ -80,6 +116,17 @@ Launch with data, take screenshot, visually inspect. Pattern:
    ```
    When only single-run .db files exist, duplicate a run with a new ID via
    SQLite to test multi-run features. Clean up the test data afterward.
+
+   **For auto-capture + auto-exit**, use frame callbacks instead of a
+   separate `sleep + import` invocation. This is more reliable (no window
+   focus race):
+   ```python
+   import os
+   dpg.set_frame_callback(5, lambda s,a,u: os.system(
+       "DISPLAY=:0 import -window root /tmp/gui_check.png"))
+   dpg.set_frame_callback(10, lambda s,a,u: dpg.stop_dearpygui())
+   dpg.start_dearpygui()
+   ```
 2. Run in background: `terminal(background=true)`
 3. `sleep 3 && DISPLAY=:0 import -window root /tmp/gui_check.png`
    NOTE: `import -window root` captures the focused window. If the
