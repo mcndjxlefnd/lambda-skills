@@ -14,6 +14,9 @@ close with its close-tag. Example:
 
 Gate 1 — Permission to implement
   Present a concrete plan: what changes, where, why.
+  Keep it simple and direct. If presenting architectural options,
+  use concrete language: "Option A: do X. Option B: do Y. A is better because Z."
+  No walls of text or abstract architectural nuance.
   Await explicit approval: "yes," "approved," "proceed," "go ahead."
   Discussion, questions, head-nodding ≠ approval.
   No file changes until approved.

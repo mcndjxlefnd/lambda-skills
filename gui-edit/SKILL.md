@@ -17,12 +17,18 @@ domain lens to the gatekeeper.
 
 Dashboard code: `haga_tools/dashboard/` (main.py, data.py, process_tree.py).
 State management pitfalls: `references/state-management-pitfalls.md`.
+Stale-show pitfall (set-iterated render loop): `references/stale-show-pitfall.md`.
 
 ## Lens
 
-**Scope** = visual problems mapped to dashboard code. Find widget creation
-sites with `search_files(pattern="<visible text>", path="haga_tools/dashboard")`.
-Read around the match for layout context (parent group, spacers, siblings).
+**Scope** = visual problems mapped to dashboard code. **Prefer
+`mcp_codegraph_codegraph_context`** for codebase exploration — one call
+returns entry points, related symbols, and key bodies for the
+relevant area. Use `codegraph_trace from→to` for flow questions
+(e.g. click handler → state mutation → chart update). Fall back to
+`search_files(pattern="<visible text>", path="haga_tools/dashboard")`
+only for finding widget creation sites by literal text, and
+`read_file` for layout context (parent group, spacers, siblings).
 
 **Implementation** = edit the GUI code under `haga_tools/dashboard/`. DPG
 constraints:
@@ -61,6 +67,39 @@ constraints:
   `_load_file(replace=True)` only — that's the "new file" clean-slate path.
   When you see a cleanup function that resets `checked_runs` or selection
   state, that's the bug.
+- **Stale-show pitfall (set-iterated render loop)**: A render loop that
+  iterates a *subset* of items to update/create line series (e.g. `for pid
+  in selected_processes`) will NEVER hide line series for items that just
+  left that subset. The loop simply doesn't visit them. Classic symptom:
+  visual state of the selectable flips off correctly (DPG handles that
+  side), but the corresponding chart line stays drawn — until the subset
+  becomes empty, at which point a different branch (e.g. the run-level
+  `else` in `_update_chart`) does a full hide sweep, and all the stale
+  lines disappear at once. So "deselect one" looks broken, "deselect the
+  last" looks like a sudden fix. DIAGNOSIS: grep the render function for
+  `for x in <subset>` and check whether anything hides items in the
+  *complement*. The existing "Hide stale from unchecked runs" loop is
+  often present but only covers one half (unchecked run, any proc) — the
+  other half (checked run, deselected proc) is the missing case.
+  FIX: unify the hide into one sweep with the condition for *not*
+  hiding = `(item in active_set) AND (item in selected_subset)`. Anything
+  failing that test is stale and gets `configure_item(tag, show=False)`.
+  In `_update_chart`, the three "Hide stale" loops (convergence, variance,
+  sigma) become a single shape: hide `(run, proc)` unless `run in checked
+  AND proc in selected`. The `else` branch's "Hide all process-level
+  series" loop is the equivalent full-domain sweep when selected is
+  empty — that one is correct as-is.
+- **Color-index consistency pitfall**: when a widget's color is bound by
+  *index* into a palette list, every other widget that should share that
+  color must derive its index from the **same** ordering. The classic
+  symptom is "tree highlight color doesn't match the chart line color for
+  the same item." Cause: tree themes indexed by `sorted(all_processes)`,
+  chart themes indexed by `sorted(selected)`. These only agree when the
+  selected items are the first N in the full sort. FIX: build a
+  stable `item_id → color_index` map at source-of-truth time (e.g. when
+  the tree is built), and look up that map from every other place that
+  needs a color. Don't re-derive indices inline — different lists,
+  different sorts, different `enumerate` counts, different bugs.
 
 **DPG legend pitfall (2.3.1):** `dpg.add_plot_legend(parent=..., show=False)` sets the
 item's internal `show` config to `False`, but ImPlot still renders the legend
@@ -118,8 +157,8 @@ Launch with data, take screenshot, visually inspect. Pattern:
    SQLite to test multi-run features. Clean up the test data afterward.
 
    **For auto-capture + auto-exit**, use frame callbacks instead of a
-   separate `sleep + import` invocation. This is more reliable (no window
-   focus race):
+   **For auto-capture + auto-exit**, use frame callbacks instead of a separate
+   `sleep + import` invocation. This is more reliable (no window focus race):
    ```python
    import os
    dpg.set_frame_callback(5, lambda s,a,u: os.system(
@@ -127,12 +166,24 @@ Launch with data, take screenshot, visually inspect. Pattern:
    dpg.set_frame_callback(10, lambda s,a,u: dpg.stop_dearpygui())
    dpg.start_dearpygui()
    ```
+   **Pitfall**: `dpg.set_frame_callback(N, cb)` registers cb to fire ONCE
+   at frame N, then unregisters. Do NOT combine multiple frame-N actions
+   into one callback with `if frame == 3: do_X(); elif frame == 8: do_Y()`
+   — the callback fires once and exits; later frames have no callback and
+   `dpg.stop_dearpygui()` is never reached (the test script hangs until
+   the foreground timeout kills it). Use one `set_frame_callback` call
+   per frame, as shown above. Symptom: 180s timeout, no error, screenshot
+   may have been written but the process never exits.
 2. Run in background: `terminal(background=true)`
 3. `sleep 3 && DISPLAY=:0 import -window root /tmp/gui_check.png`
    NOTE: `import -window root` captures the focused window. If the
    dashboard isn't on top, the screenshot catches the terminal instead.
    Relaunch the dashboard to ensure focus, or use `xdotool` if available.
-4. `vision_analyze` the screenshot for visual regressions
+4. Attach the screenshot to context with `vision_analyze(path, question="")`
+   and **read it yourself** — primary model has native vision, no
+   auxiliary text relay. Describe what's in the image, identify
+   visual regressions, map to code. (If model is non-vision, pass a
+   real question to get a text description.)
 5. Kill the process when done
 
 Pytest covers data logic only (`pytest tests/ -v -k "not test_e2e"`).
