@@ -2,7 +2,7 @@
 name: haga-lambda
 description: "Lambda skill — HAGA codebase knowledge: repo layout, constraints, pitfalls, test commands, documentation conventions, issue tracker, branch safety. Loaded sequentially with other lambda skills."
 category: lambda-skills
-version: 1.3.0
+version: 1.4.0
 ---
 
 # HAGA Codebase Context
@@ -37,6 +37,20 @@ constraints.
    in any file spawning processes.
 
 5. **Push immediately after each commit.**
+
+## Gates
+
+Gate 1 (permission to implement):
+- List files to be modified (with paths).
+- State what changes and why (one sentence per file).
+- List which test commands to run for verification.
+- Flag any spec departures or architectural implications.
+
+Gate 2 (permission to commit):
+- Present `git diff --stat` summary.
+- Present test results (pass/fail, counts).
+- Propose commit message (subject + body).
+- Note any files changed since Gate 1 approval.
 
 ## Project Structure
 
@@ -121,6 +135,7 @@ cd ~/haga_master && PYTHONPATH=src ~/haga_master/.venv/bin/python -m pytest \
 ## Reference Files
 
 - `references/ipc-protocol-pitfalls.md` -- protocol sync bugs (generation mismatch, orphaned Manager, fork+abort hang, EOFError)
+- `references/selection-strategy-abc.md` -- ISelection/IReproduction ABC ownership split (variable parent count). Load for selection-pressure experiments or strategy-interface changes.
 - `references/phase1-genotype-pipeline.md` -- Genotype+GAPipeline architecture, strategy split. Load for genotype/pipeline/strategy-interface changes.
 - `docs/plans/data-gathering-phase1.md` -- per-run SQLite data infra (Phases 1-3 complete, 4 pending, 5 future)
 - `references/ga-positional-bias.md` -- positional asymmetry checklist for GA operators (anchoring, bias washout)
@@ -184,6 +199,21 @@ Templates: `templates/plan.md`, `templates/run_tsplib.py`, `templates/issues-ope
 - **GA operator changes: analyze dynamics first.** Don't jump to "spec says X, code does Y."
   Present math (distributions, bias accumulation, representation properties). User may decide
   the "bug" is beneficial. Correctness does not equal fix.
+- **No padding or truncation in pipeline.** Population size is determined by IPopulationSize
+  and must be a multiple of parent_count so reproduction fills it exactly. Padding dilutes
+  selection signal; truncation discards unevaluated offspring. Use `SelectionAlignedScaling`
+  to round N up to the nearest multiple of parent_count.
+
+  **Also must be multiple of 4.** `StriatedReproduction` produces 4 offspring per pair and
+  accesses `offspring_map[idx+3]` — N not divisible by 4 causes `IndexError`. After
+  `parent_count` alignment, post-round: `((N + 3) // 4) * 4`. Done in
+  `SelectionAlignedScaling.compute()`.
+
+  **`mid=0` guard for small populations.** When N ≤ 9 with Top10Selection (1 parent),
+  `mid = n_parents // 2` = 0 → `ZeroDivisionError`. Fix: `mid = max(1, n_parents // 2)` and
+  `right = min(mid + pair, n_parents - 1)`. Applied in `StriatedReproduction.reproduce()`.
+
+  See `references/selection-strategy-abc.md`.
 - **Offspring genotype has uninitialized fitnesses.** `execute()` returns genotype with
   `fitnesses=np.zeros(N)`. Call `_evaluate(new_genotype)` before return. GA still functions
   (next gen re-evaluates) but logging and upheritance quality degrade.
@@ -233,6 +263,12 @@ Templates: `templates/plan.md`, `templates/run_tsplib.py`, `templates/issues-ope
   reads at `__init__`. Companion: dispatch callable once in `__init__`.
 - **Strategy loading:** `load_strategy()` calls `cls()` no-arg. Constructor args -> sensible defaults;
   entrypoint re-instantiates with proper args.
+- **`subordinate_config_path` circular reference.** `SessionManager.__init__` writes
+  `subordinate_config_path: config_filepath` to the JSON config (pointing to the root config
+  itself), overriding the value from `session_config`. Child processes inherit the root config
+  instead of using the separately-configured subordinate config. `sub_config.json` is never
+  read downstream. To fix, preserve the original `subordinate_config_path` from `session_config`
+  in the written JSON, or remove the override.
 
 ### Data/Schema
 

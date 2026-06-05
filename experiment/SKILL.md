@@ -2,7 +2,7 @@
 name: experiment
 description: "Lambda skill — experiment running adapter: data-gathering runs, .db verification, concat/analyze workflow. Loaded sequentially with other lambda skills."
 category: lambda-skills
-version: 0.1.0
+version: 0.5.0
 ---
 
 # Experiment
@@ -11,6 +11,12 @@ version: 0.1.0
 
 Run HAGA experiments via `run.py`, collect per-run .db files in `data/runs/`,
 verify data integrity, and feed analysis tooling.
+
+**Research execution entry point:** `docs/roadmap.md` (in the experiments repo)
+organizes current priorities with an "Immediate" section for what to do next.
+Actionable S-items live in `docs/issues-open.md`. When the user says "start the
+roadmap" or "begin carrying out the research plan," load docs/roadmap.md and
+execute "Immediate" items in order, referencing issues-open.md for details.
 
 ## CodeGraph (MCP Code Intelligence)
 
@@ -39,6 +45,20 @@ Before presenting scope at Gate 1:
    drift between branches breaks concat.
 3. **Check tool health.** Verify tools run clean on existing data:
    `PYTHONPATH=src .venv/bin/python tools/concat_runs.py --help` etc.
+
+## Gates
+
+Gate 1 (permission to implement):
+- Present scope table: TSP instance, config variant, run count, db mode.
+- Confirm schema matches current logging.py (if new columns, flag).
+- State which existing .db files will be kept vs retired.
+- Note any code changes required (variant toggle, run_id patch).
+
+Gate 2 (permission to commit):
+- List all .db files produced with row counts and status.
+- Verify: non-zero best_fitness, status="completed", expected generation count.
+- Present `git diff --stat` if code was changed.
+- Propose commit message with variant name and replicate count.
 
 ## Domain Lens
 
@@ -95,6 +115,14 @@ and `Resolution` (commit hash) in closed. These are operational TODOs,
 not research notes (those go in lab-notebook.md).
 
 - **ideas-open.md:** Active items. Start empty template, populate as ideas arise.
+  When populating from an external source (LLM chat, design doc, article,
+  meeting notes), the `Source` field is a URL or quoted excerpt, not a repo
+  path. Bias to "simple, single-knob variants of existing code" — when the
+  user says "some simple experiments," 5-8 items, not an exhaustive dump.
+  Each item should be independently runnable. Tag the highest-leverage item
+  as `planned`, others as `idea`. If the source arrives in chunks ("I'll send
+  one exchange per message, stand by"), hold and acknowledge each chunk
+  briefly; do not process until the user signals done.
 - **ideas-closed.md:** Resolved/completed items. Numbered by resolution order.
 - **Naming:** `ideas-*` not `issues-*` — reflects the experimental/exploratory
   environment (hypothesis testing, not code review).
@@ -110,8 +138,23 @@ not research notes (those go in lab-notebook.md).
   ---
   ```
 
-4. For each variant, commit only the changed source file(s).
-   `git log -p` shows the full evolution.
+4. For each variant:
+   a. Commit the variant code change FIRST as a standalone commit:
+      `git add <changed-files> && git commit -m "fix-mi: short description"`.
+      This captures the variant implementation as a distinct state before
+      any runs.
+   b. Run all replicates.
+   c. Commit code + all .db files together as `test-{variant-name}-r{N}[-{condition}]`:
+      `git add -A && git commit -m "test-elite-on-r3-mi-fix"`.
+      `r{N}` is the total replicate count in this commit (`r3` = 3 reps
+      in the results snapshot).
+      This captures both the source change AND the run data in one
+      self-contained results snapshot. Push immediately.
+   d. **Incremental expansion:** when adding more replicates later
+      (e.g. 3 → 5), commit with `r{new_total}`:
+      `git add -A && git commit -m "test-elite-on-r5-mi-fix"`.
+      The old results commit remains in history. Don't re-commit the
+      code change — it's already captured.
 5. Final commit: revert code to original + finalize lab-notebook.md.
    This leaves the branch in a clean state with the notebook as output.
 6. Push: `git push origin <branch>`. The remote `origin` is the GitHub
@@ -134,6 +177,51 @@ dashboard (or master) — PRISTINE fork point. Identical to haga_master.
 at the repo root on the experiment branch (committed as the final step, after
 revert). This keeps dashboard permanently mergeable with upstream without
 conflict.
+
+### Upstream Sync (Dashboard Commits)
+
+`upstream/dashboard` (the haga_master fork point) occasionally gets GUI fixes,
+`.gitignore` changes, and other non-experiment commits. These need to propagate
+to all experiment branches to keep the fork's dashboard usable.
+
+**When:** Listed as a recurring task in docs/roadmap.md §Immediate. Also
+trigger when the user says "sync the dashboard" or after upstream/dashboard
+acquires new commits.
+
+**Workflow:**
+
+1. **Identify missing commits.** `git log --oneline upstream/dashboard --not origin/dashboard`
+   on the `dashboard` branch. Shows what's on upstream but not on your origin.
+
+2. **Classify.** Only cherry-pick GUI fixes and gitignore changes. Skip commits
+   containing test scripts, .db data files, screenshots, or local checkpoint
+   junk — these are session artifacts that don't belong in the experiments repo.
+
+3. **Cherry-pick to dashboard.** On the `dashboard` branch:
+   `git cherry-pick <sha1> <sha2> ...`
+   Handle empty cherry-picks (already-applied changes like `.codegraph/` gitignore
+   entries) with `git cherry-pick --skip`.
+
+4. **Propagate to experiment branches.** Checkout each branch and cherry-pick
+   the same commits:
+   ```
+   git checkout mi-sweep && git cherry-pick <sha1> <sha2>
+   git checkout select-press && git cherry-pick <sha1> <sha2>
+   git checkout elite-delete && git cherry-pick <sha1> <sha2>
+   ```
+   These are pure GUI/gitignore changes — no experiment-code impact, so
+   conflicts are unlikely.
+
+5. **Push all branches:**
+   ```
+   git checkout dashboard
+   git push origin dashboard mi-sweep select-press elite-delete
+   ```
+
+6. **Verify.** Import the dashboard modules to confirm they resolve:
+   `PYTHONPATH=. .venv/bin/python -c "from haga_tools.dashboard.main import main; print('OK')"`
+   The dashboard needs `PYTHONPATH=.` (repo root) because `haga_tools/` lives
+   at repo root, not under `src/`.
 
 **Commit format:** `<name>: <variant> — <what changed>` with body
 describing result (tour length, key metrics, behavioral observation).
@@ -184,14 +272,28 @@ When running experiments that temporarily modify adaptation strategy code
 1. Switch to the experiment branch in `~/haga_experiments/`
 2. Implement the variant code change (write_file or patch)
 3. Set a distinguishable `run_id`: patch `run.py` line 129 from
-   `f"{instance_name}-run"` to `f"{instance_name}-<variant>"`
-4. Run from the experiments repo using haga_master's venv:
-   `cd ~/haga_experiments && PYTHONPATH=src ~/haga_master/.venv/bin/python run.py data/tsplib/<instance>.tsp --note "description of what changed"`
-   The .db lands in `~/haga_experiments/data/runs/`; copy to the experiment's
-   `runs/` directory for commit.
-5. Revert run.py run_id
-6. Implement next variant
-7. Revert source file to original after all runs complete
+   `f"{instance_name}-run"` to `f"{instance_name}-<variant>-repN"`
+4. Commit the variant code change FIRST as a standalone commit:
+   `git add <changed-files> && git commit -m "fix-mi: short description"`
+   This captures the variant implementation before any runs.
+5. Run each replicate independently from the experiments repo using
+   haga_master's venv:
+   `cd ~/haga_experiments && PYTHONPATH=src ~/haga_master/.venv/bin/python run.py data/tsplib/<instance>.tsp --db "data/runs/<instance>-<variant>-repN_$(date +%Y-%m-%d-%H%M%S).db" --note "<description>"`
+6. After ALL replicates for a variant are done, commit the code state +
+   all .db files together as `test-{variant-name}-r{N}[-{condition}]`:
+   `git add -A && git commit -m "test-elite-on-r3-mi-fix"`
+   (`r3` = 3 replicates in this snapshot).
+   This captures both the source change AND the run data in one atomic
+   results snapshot. Push immediately.
+7. Revert source file to original if the change was a variant toggle
+   (e.g. one-line return in a method). Keep the change if it's a
+   permanent improvement (e.g. a bug fix shared by all variants).
+8. Implement next variant or finalize.
+
+**Key principle:** commit in two phases per variant. First commit the code change
+alone (variant implementation). Then after all replicates finish, commit code + .db
+files together as the results snapshot. This gives each commit a clear role: one
+for "what I changed" and one for "what happened."
 
 **run_id is the dashboard label:** The `run_id` field (`runs.run_id` in the DB)
 is what the dashboard software displays as the run's title. It defaults to
@@ -212,6 +314,180 @@ under `templates/`:
 - `templates/ideas-open.md` — blank ideas tracker
 
 Copy each to `<experiment-dir>/` or `docs/` as appropriate and fill in.
+
+## Replicated Runs (Multiple Replicates Per Variant)
+
+For statistical confidence, run each variant N times (3 is a common minimum).
+All post-hoc analysis (mean, variance, confidence intervals) is done across
+replicates at the analysis stage — *not* by merging data at the DB level.
+
+**Selection-fraction experiments** follow the same pattern with abbreviated
+naming: run_id = `f{percent}-rep{N}`, filename = `f{percent}-rep{N}_{timestamp}.db`.
+The variant IS the fraction (e.g. `f10`, `f25`, `f75`). No instance prefix in
+the filename — the instance is constant across the sweep.
+
+For statistical confidence, run each variant N times (3 is a common minimum).
+All post-hoc analysis (mean, variance, confidence intervals) is done across
+replicates at the analysis stage — *not* by merging data at the DB level.
+
+**Workflow:**
+
+0. **Verify RDRAND independence.** Before running replicates, confirm the RNG
+   strategy is stateless hardware entropy per call. `RDRandom` uses the
+   `rdrand64` CPU instruction directly — no seed, no shared PRNG state, each
+   call is fresh entropy. Replicates don't need explicit seeding. If the config
+   uses a different RNG, confirm independence before proceeding.
+
+1. **Run each replicate independently.** Use run_id suffix:
+   `{instance}-{variant}-rep1`, `{-rep2}`, etc. Patch run.py line 129 before
+   each replicate.
+
+2. **Analysis cross-replicate.** The DB is per-replicate. To compute aggregate
+   curves (mean best_fitness per generation across 3 replicates):
+
+   ```python
+   # Pseudocode — concat into one DB, then group by generation, avg
+   sqlite3 series.db "
+   SELECT generation, AVG(best_fitness) AS mean_best,
+          AVG(mean_fitness) AS mean_mean,
+          VAR_SAMP(best_fitness) AS var_best
+   FROM generations
+   GROUP BY generation
+   ORDER BY generation"
+   ```
+
+   For full cross-replicate aggregation across multiple .db files:
+   ```bash
+   PYTHONPATH=src .venv/bin/python tools/concat_runs.py  # produces series.db
+   ```
+   Then query series.db grouping by generation.
+   **Note:** concat deduplicates on `runs.run_id` (PRIMARY KEY) — all replicates
+   MUST have unique run_ids or only the first per duplicate is merged.
+
+3. **Naming.** run_ids follow `{instance}-{variant}-rep{N}` pattern (or
+   `{variant}-rep{N}` for selection-fraction sweeps where the fraction IS the
+   variant). DB filenames follow the same: `{variant}-rep{N}_{timestamp}.db`.
+   The run_id (not filename) is what the dashboard labels the run.
+
+   For selection-pressure experiments with Top{F}Selection strategies,
+   variant = `f{percent}` (e.g. `f10`, `f25`, `f75`), giving filenames
+   like `f10-rep1_2026-05-31-120000.db`.
+
+4. **No DB-level merging of replicates.** Each replicate is its own row in
+   `runs` table. The `generations` table has separate process_id chains per
+   replicate. Queries filter by run_id and aggregate.
+
+## Experiment Planning (Design Phase)
+
+Before running any code, produce a plain-text planning document at
+`docs/plans/<name>-plan.md` (in the experiment repo) covering:
+
+- **Hypothesis** — what question are you answering? What outcome would
+  confirm/reject?
+- **Parameter sweep** — which strategy parameter(s), what values, what
+  resolution. Justify the range.
+- **Replication** — how many runs per value. 3 is baseline.
+- **TSP instance** — choose one (lin318, berlin52, etc.). Keep constant
+  across all variants in one sweep.
+- **Schema requirements** — if the experiment logs a parameter that isn't
+  in the current `generations` table schema, list the new column and its
+  type. See `references/parameterizing-strategies.md`.
+- **Aggregation plan** — how will you combine similar runs? Mean/median per
+  generation? Final tour length distribution? Convergence time?
+
+  **Visualization preference:** For group comparison (overlaying N parameter
+  values against each other), use arithmetic mean — one clean solid line per
+  group. No envelopes, no shaded bands, no error bars. Four lines per plot is
+  the target; more than that becomes illegible. If the lines diverge, the
+  groups are separable. If they merge, they aren't. Within-group spread
+  (envelope) is secondary to between-group separation — add it only as a
+  diagnostic view if a threshold result is ambiguous.
+
+  Apply this to ALL logged metrics, not just best_fitness. The sigma
+  trajectories (best_mut_intensity, mean_mut_intensity, variance) often carry
+  more signal about parameter effects than convergence curves — they reveal
+  how the GA's adaptive dynamics change under different regimes, not just
+  whether it converges faster or slower.
+
+## Cross-Branch Experiment Audit
+
+Review and synthesize findings across all experiment branches in the experiments
+repo. Used when the user asks for the state of all experiments, or to identify
+cross-branch gaps and dependencies before starting a new experiment.
+
+### Workflow
+
+1. **Inventory branches.** `git branch -a` lists both local and remote branches.
+   Include `upstream/` when present (upstream = haga_master fork point).
+
+2. **Full commit logs per branch.** `git log --oneline <branch> --` for each
+   experiment branch. Identify the fork point (the last commit shared with the
+   pristine branch — everything above it belongs to the experiment).
+
+3. **For each experiment branch, checkout and read:**
+   - `experiment.json` — machine-readable metadata, variant list, results.
+     Check BOTH root AND `<experiment-name>/` subdirectory — document location
+     drifts between experiments.
+   - `lab-notebook.md` — prose analysis, conclusions, open questions.
+     Try root, `docs/`, and `<experiment-name>/`.
+   - `docs/ideas-open.md` / `docs/ideas-closed.md` — idea trackers (often empty
+     template shells on early branches).
+   - `docs/plans/` — execution plans and design decisions (on branches that
+     include them).
+   - `experiments-logbook.md` or `logbook.md` — chronological master journal at
+     root level, if present.
+
+4. **Cross-reference findings across all branches:**
+   - **Cross-branch fix gaps** — does a known fix on one branch need
+     cherry-picking to another (e.g., the mi-fix on `elite-delete` commit
+     `021b03a` that `select-press` lacked)?
+   - **Document location drift** — note per-branch where artifacts live.
+     Three patterns: root-level (`elite-delete`), subdirectory (`mi-sweep`
+     uses `2026-05-30-mi-sweep/`), and `docs/` (`select-press` uses
+     `docs/lab-notebook.md`).
+   - **Naming inconsistencies** — branch names vs directory names vs documented
+     conventions. Logbook.md may reference `exp/<date>-<slug>` conventions that
+     were never actually used.
+   - **Common conclusions** — do findings converge across experiments? (e.g.,
+     "selection pressure dominates convergence endpoint regardless of mutation
+     regime" appears in both mi-sweep and elite-delete).
+   - **Incomplete experiments** — identify branches with negative controls
+     awaiting re-run, or documented re-run plans that were never executed.
+   - **Ideas trackers** — check if real content exists vs template-only.
+
+5. **Compile structured summary.** Per branch: fork point, commit count,
+   research question, key findings, status, document locations, open questions,
+   cross-branch dependencies.
+
+See `references/cross-branch-audit-checklist.md` for an output template.
+
+### Pitfalls
+
+- **Branch naming ambiguity with `git log`.** `git log --oneline <branch>` may
+  fail when branch name collides with a file/directory name. Use
+  `git log --oneline <branch> --` (trailing `--`) to disambiguate.
+- **Stale experiment.json.** The root-level file on some branches is a scaffold
+  written before running, while a subdirectory copy has the actual post-run data.
+  Always check ALL locations.
+- **Logbook name drift.** Three patterns: `experiments-logbook.md`, `logbook.md`,
+  `docs/lab-notebook.md`. Grep broadly for any of these. Also check for
+  `docs/lab-notebook.md` vs root-level ones.
+- **Ideas trackers may be empty.** `docs/ideas-open.md` and `docs/ideas-closed.md`
+  are often template-only on early experiment branches. Check actual content
+  length before reporting findings as significant.
+- **Upstream branches are NOT experiments.** `remotes/upstream/master` and
+  `remotes/upstream/dashboard` are pristine haga_master history — the fork
+  point. Skip when auditing experiments.
+- **Commit message conventions vary.** Branches use `test-`, `exp()`, `fix-`,
+  `run-config:`, or plain prefixes. Don't filter by convention — read all
+  unique commits above the fork point.
+- **Cross-branch schema drift.** .db files on branches with different
+  `generations` table schemas can't be concatenated. Note if schema
+  differences matter for the analysis.
+- **Fork point identification.** The experiment's commits start at the first
+  commit NOT shared with the pristine branch (usually `dashboard` or `master`).
+  Everything below is shared haga_master history — ignore when auditing
+  experiment-specific work.
 
 ## Key Commands
 
@@ -247,6 +523,19 @@ These .db files are garbage — delete and re-run after fixing the pipeline.
 The GA still functions (next generation evaluates real fitnesses), but the
 logged data is worthless.
 
+### Population Sizing Edge Cases (N % 4, mid=0, tau Dead Zone)
+
+See `references/population-sizing-edge-cases.md` for three known bugs that
+crash experiment runs or make results indistinguishable:
+
+1. **SelectionAlignedScaling** may produce N not divisible by 4, causing
+   IndexError in StriatedReproduction (fix: post-round to multiple of 4).
+2. **StriatedReproduction** crashes when n_parents < 2 (mid=0) on small
+   leaf populations (fix: guard mid, clamp right index).
+3. **TripleIndependentSigma dead zone** — mut_intensity frozen at 1.0 for
+   M>=200, making selection-fraction effects invisible. Fix exists on
+   `elite-delete` commit `021b03a` (decouple tau_mi, float intensity).
+
 ### rm with Broad Timestamp Globs
 
 When cleaning old .db files, globs like `*-212*.db` can match new files with
@@ -274,8 +563,59 @@ breaks the established pattern. Only use `--db` when the user explicitly asks
 for a specific output path (e.g., series mode, or variant experiments with
 custom `run_id`). Default behavior is correct.
 
+### Concat Deduplicates on run_id Primary Key
+
+`concat_runs.py` uses `INSERT OR IGNORE INTO runs SELECT ...` — `runs.run_id`
+is the PRIMARY KEY. If all replicates share the same run_id (e.g.
+`lin318-f10` for all 3 f10 reps), only the FIRST is merged; the rest are
+silently dropped. **Fix:** patch `run.py` line 129 to include the replicate
+suffix before each replicate: `{instance}-{variant}-rep{N}`. The filename
+(`--db` flag) is separate from the run_id label that concat sees.
+
 **Exception:** Variant experiments where the user wants the option name in
 both the run_id AND the filename. In that case, use `--db` with
 `{instance}-{variant}_{timestamp}.db` AND patch `run.py` run_id to
 `{instance_name}-{variant}`. This is an explicit user request, not a silent
 override.
+
+### Two-Phase Commit Pattern
+
+For each variant group, make TWO commits:
+1. **Code change commit** — `git add <changed-files> && git commit -m "fix-mi: ..."`
+   Captures the variant implementation before any runs. No .db files exist yet.
+2. **Results commit** — `git add -A && git commit -m "test-elite-on-r3-mi-fix"`
+   Code state + all .db files from the completed replicates together.
+
+`r{N}` in the results commit name indicates the total replicate count
+(`r3` = 3 replicates in this snapshot). When expanding incrementally
+(e.g. 3 → 5), use `r{new_total}` (`test-elite-on-r5-mi-fix`). The commit
+message body should note it's an append. The old results commit remains
+in history — each snapshot is independently verifiable.
+
+Don't skip the code-change commit — without it, the variant's code state is
+only visible as a diff between results commits, not as a named point in
+history. Don't run replicates before committing the change either — if
+runs produce data under an uncommitted code change, the .db files have no
+code-pedigree anchor. If the user corrects this, their preference is the
+two-phase pattern: first commit the code change, then run, then commit
+code + .db files together.
+
+### Permanent Fix vs Variant Toggle
+
+Not every code change is a variant — distinguish between:
+- **Permanent fix** — a bug fix or improvement that applies to all variants
+  (e.g. decoupling tau_mi, removing int(round())). Commit it once, keep it
+  across all variant runs. Don't revert between groups.
+- **Variant toggle** — a one-line behavioral switch (e.g. return-early to
+  disable elitism). Revert after running the variant group. Only this gets
+  toggled per variant.
+
+### Selection Fraction × FifthBreedingReplacement Clean Integer Constraint
+
+When sweeping the selection fraction `f` (parent pool = `N * f`), verify the
+interaction with `FifthBreedingReplacement`'s hardcoded `ceil(P * 0.20)`.
+If `N * f * 0.20` is not integer, the ceil introduces fractional-difference
+noise between variants. For lin318 (N=200), the constraint is `40f ∈ ℤ` —
+satisfied by f ∈ {0.10, 0.20, 0.25, 0.30, 0.40, 0.50, 0.60, 0.75, 0.80}.
+Always verify for the specific TSP instance's computed N before proposing
+sweep values.
