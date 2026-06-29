@@ -1,8 +1,8 @@
 ---
 name: haga-lambda
-description: "Lambda skill — HAGA codebase knowledge: repo layout, constraints, pitfalls, test commands, documentation conventions, issue tracker, branch safety. Loaded sequentially with other lambda skills."
+description: "HAGA codebase knowledge: repo layout, constraints, pitfalls, test commands, documentation conventions, issue tracker, branch safety. Self-contained with inline gates."
 category: lambda-skills
-version: 1.4.0
+version: 1.5.0
 ---
 
 # HAGA Codebase Context
@@ -51,6 +51,10 @@ Gate 2 (permission to commit):
 - Present test results (pass/fail, counts).
 - Propose commit message (subject + body).
 - Note any files changed since Gate 1 approval.
+- Run `graphify extract . --update` to keep the knowledge graph current with the code changes. Show node/edge delta from the update.
+  If `--update` reports no LLM API key for doc files, the code-only AST extraction
+  already completed; doc semantic extraction needs the graphify skill's subagent
+  dispatch flow (see the graphify skill).
 
 ## Project Structure
 
@@ -162,6 +166,11 @@ Templates: `templates/plan.md`, `templates/run_tsplib.py`, `templates/issues-ope
 - **Stale dirs after switch:** `git clean -fd` for `__pycache__/` (verify nothing else first).
 - **Cherry-pick feature branch:** branch from parent of first feature commit. Chronological order,
   skip unrelated. Conflict on issues-*.md: keep open items for non-ported, add only ported to closed.
+- **Cherry-pick dependency chain:** when cherry-picking fails with a signature mismatch (missing
+  parameter, unresolved symbol), the commit depends on a parent commit that established the
+  interface. Cherry-pick the parent first, then the child. If the chain introduces experiment
+  artifacts, extract only the fix portion (e.g., loop guards without signature changes) and
+  commit manually.
 
 ### `patch` Safety
 
@@ -195,7 +204,7 @@ Templates: `templates/plan.md`, `templates/run_tsplib.py`, `templates/issues-ope
 
 - **Convergence detection: integral-of-|f'|, not pairwise delta.** `avg|f'|` over sliding window
   (stdlib, K=5, eps=0.1, W=5 consecutive). Pairwise flags plateaus; slope is threshold-sensitive.
-  Integral gives identical results for eps=0.05-1.0. Present method before implementing.
+  Integral gives identical results for eps=0.05-1.0. Present method before implementing. See ADR 0021.
 - **GA operator changes: analyze dynamics first.** Don't jump to "spec says X, code does Y."
   Present math (distributions, bias accumulation, representation properties). User may decide
   the "bug" is beneficial. Correctness does not equal fix.
@@ -212,6 +221,10 @@ Templates: `templates/plan.md`, `templates/run_tsplib.py`, `templates/issues-ope
   **`mid=0` guard for small populations.** When N ≤ 9 with Top10Selection (1 parent),
   `mid = n_parents // 2` = 0 → `ZeroDivisionError`. Fix: `mid = max(1, n_parents // 2)` and
   `right = min(mid + pair, n_parents - 1)`. Applied in `StriatedReproduction.reproduce()`.
+  See ADR 0026.
+
+  Also guards arbitrary N from SelectionAlignedScaling by cycling column-split pairs.
+  See ADR 0028.
 
   See `references/selection-strategy-abc.md`.
 - **Offspring genotype has uninitialized fitnesses.** `execute()` returns genotype with
@@ -226,6 +239,7 @@ Templates: `templates/plan.md`, `templates/run_tsplib.py`, `templates/issues-ope
   is necessary** — without it, selection pressure crushes intensity to zero regardless
   of tau. Upper clamp is optional (large M never hits it).
   See `references/triple-indep-sigma-dead-zone.md` for full experimental matrix.
+  See ADR 0023 for the architectural decision.
 
 ### IPC/Protocol
 
@@ -280,6 +294,11 @@ Templates: `templates/plan.md`, `templates/run_tsplib.py`, `templates/issues-ope
 
 ### Behavior/Agency
 
+- **Don't over-infer or add structure the user didn't mention.** If the user describes a mechanism
+  change and you recognize a conceptual similarity to an existing pattern, resist the urge to
+  name it ("chimera", "cross-position argmax", "multi-source assembly"). The user may see it as
+  the same mechanism already in place with a different arity. Inflating a "more N" change into a
+  qualitatively new category wastes rounds on correction. State the change in the user's terms.
 - **"Don't do X" = stop, don't encode.** Correction of current behavior, not a new rule. Ask before
   saving durable patterns.
 - **Defensive code: flag at scope, not verification.** Plan items proposing `_guarded()`, try/except
@@ -324,25 +343,49 @@ Templates: `templates/plan.md`, `templates/run_tsplib.py`, `templates/issues-ope
 - **Minimal .gitignore:** `/design/`, `__pycache__/`, `*.pyc`, `*.so`, `data/runs.db`.
   Per-run .db files ARE tracked. No new patterns without approval.
 
-## CodeGraph (MCP Code Intelligence)
+## Graphify (MCP Code Intelligence)
 
-CodeGraph provides a pre-indexed knowledge graph of `~/haga_master/` (94 files,
-881 nodes, 1,574 edges) served via MCP tools -- auto-injected, no per-session
-config. Auto-syncs via inotify (2s debounce) as you edit.
+Graphify builds a queryable knowledge graph of `~/haga_master/` served via MCP.
+Auto-injected when the `graphify-master` MCP server is configured in the profile's
+`config.yaml`. Hot-reloads on file changes.
 
-Use CodeGraph INSTEAD of `search_files` + `read_file` for cross-file queries. It
-answers in one call what takes 5-8 grep/read rounds:
+Use Graphify MCP tools INSTEAD of `search_files` + `read_file` for cross-file
+queries -- answers in one call what takes 5-8 grep/read rounds:
 
-- **`context(query="...")`** -- entry points, related symbols, code snippets for
-  a task description. Replace exploratory search_files -> read_file chains.
-- **`search(query="...")`** -- FTS5 symbol search across the entire codebase.
-  For "where is X defined" queries.
-- **`callers(symbol="...")` / `callees(symbol="...")`** -- who calls this, what
-  this calls. Before renaming, refactoring, or impact analysis.
-- **`impact(symbol="...")`** -- full impact radius of a structural change.
-  Before Phase transitions or IPC protocol changes.
-- **`affected(files=["..."])`** -- which tests to run after changing files.
-- **`status()`** -- index health and staleness.
+- **`mcp_graphify_master_query_graph(question="...", mode="bfs")`** -- broad context
+  search. Replaces exploratory search_files → read_file chains.
+- **`mcp_graphify_master_query_graph(question="...", mode="dfs")`** -- trace a specific
+  path. For "where is X defined" queries.
+- **`mcp_graphify_master_get_node(label="...")`** -- full details for a specific node.
+- **`mcp_graphify_master_get_neighbors(label="...")`** -- direct neighbors. Use
+  `relation_filter="call"` for call-graph queries.
+- **`mcp_graphify_master_get_community(community_id=N)`** -- all nodes in a community.
+- **`mcp_graphify_master_god_nodes(top_n=10)`** -- most connected nodes (core
+  abstractions).
+- **`mcp_graphify_master_shortest_path(source="...", target="...")`** -- path between
+  two concepts.
+- **`mcp_graphify_master_graph_stats()`** -- node/edge counts, community count.
 
-MCP tool names use `mcp_codegraph_codegraph_<tool>()` convention. CLI fallback
-(if MCP unavailable): `cd ~/haga_master && codegraph query <symbol>`.
+CLI fallback (if MCP unavailable):
+```bash
+graphify query "..." --graph ~/haga_master/graphify-out/graph.json
+graphify explain "NodeName" --graph ~/haga_master/graphify-out/graph.json
+```
+
+MCP config (profile's config.yaml):
+```yaml
+mcp_servers:
+  graphify-master:
+    command: graphify
+    args: ["/home/lyle/haga_master", "--mcp"]
+    timeout: 120
+    connect_timeout: 60
+    enabled: true
+```
+
+See `references/graphify-mcp-tools.md` for full tool reference and codegraph→graphify migration table.
+
+## CRITICAL: Approval Gate
+
+NEVER take action without explicit user approval. Present analysis + plan, then wait.
+This includes: file writes, terminal commands, config changes, tool invocations.
